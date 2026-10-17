@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Uji pemeriksaan koneksi</title>
+<script src="../app/util.js?v=3"></script>
+<script>window.supabase={createClient:()=>({auth:{}})};</script>
+<script src="../app/store.js?v=3"></script>
+<style>body{font:12px/1.5 monospace;padding:12px}.ok{color:#157f3b}.fail{color:#b42318}.warn{color:#8a5a00}hr{border:0;border-top:1px solid #ddd}</style>
+</head><body><div id="out">menjalankan…</div>
+<script>
+(async()=>{
+const out=[];
+try{
+const real=window.fetch;const J=(s,b)=>new Response(JSON.stringify(b),{status:s,headers:{'content-type':'application/json'}});
+const b64=(o)=>btoa(JSON.stringify(o)).replace(/=/g,'');
+const anon='eyJhbGciOiJIUzI1NiJ9.'+b64({role:'anon'})+'.sig';
+const srv='eyJhbGciOiJIUzI1NiJ9.'+b64({role:'service_role'})+'.sig';
+const scen=async(name,auth,rest,key=anon,url='https://abc.supabase.co')=>{
+  const seen=[];
+  window.fetch=async(u,o)=>{u=String(u);seen.push(u.replace('https://abc.supabase.co',''));if(u.includes('/auth/v1/settings')){if(auth==='net')throw new TypeError('Failed to fetch');return auth();}if(rest==='net')throw new TypeError('Failed to fetch');return rest();};
+  const r=await Store.checkServer({url,anonKey:key});window.fetch=real;
+  return '<b>'+name+'</b> → ok='+r.ok+' <i>req: '+seen.join(', ')+'</i><br>'+r.steps.map(s=>'<span class="'+s.status+'">['+s.status+'] '+s.label+': '+s.text+'</span>').join('<br>');
+};
+out.push(await scen('A. anon 42501 pada tabel (kasus pengguna)',()=>J(200,{external:{email:true}}),()=>J(401,{code:'42501',message:'permission denied for table jhg_entries'})));
+out.push(await scen('B. API key salah',()=>J(401,{message:'Invalid API key'}),()=>J(401,{})));
+out.push(await scen('C. Tabel belum dibuat',()=>J(200,{}),()=>J(404,{code:'PGRST205',message:'Could not find the table'})));
+out.push(await scen('D. Jaringan / URL tak terjangkau','net',()=>J(200,[])));
+out.push(await scen('E. service_role key ditolak',()=>J(200,{}),()=>J(200,[]),srv));
+out.push(await scen('F. Skema public tidak diekspos',()=>J(200,{}),()=>J(406,{code:'PGRST106',message:'The schema must be one of the following'})));
+out.push(await scen('G. Data API nonaktif',()=>J(200,{}),()=>new Response('',{status:404})));
+out.push(await scen('H. URL berakhiran /rest/v1/ dinormalisasi',()=>J(200,{}),()=>J(200,[]),anon,'https://abc.supabase.co/rest/v1/'));
+out.push(await scen('I. publishable key',()=>J(200,{disable_signup:true}),()=>J(200,[]),'sb_publishable_abcdefghijklmnop'));
+out.push('<b>Klasifikasi error (setelah login)</b><br>'+[
+ [{code:'42501',message:'permission denied for table jhg_profiles'},'jhg_profiles'],
+ [{code:'42501',message:'new row violates row-level security policy for table "jhg_entries"'},'jhg_entries'],
+ [new Error('Sesi berakhir. Silakan masuk kembali.')],
+ [{foo:{bar:1}}],[{}],[null],
+ [{code:'PGRST301',message:'JWT expired'}],
+].map(([e,t])=>{const c=Store.classify(e,t);return '['+c.kind+'] '+c.text;}).join('<br>'));
+}catch(e){out.push('<span class="fail">ERROR '+e.stack+'</span>');}
+document.getElementById('out').innerHTML=out.join('<hr>');
+})();
+</script></body></html>
